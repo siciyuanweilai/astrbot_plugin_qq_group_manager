@@ -1,0 +1,303 @@
+{
+    "enabled": {
+        "description": "启用插件",
+        "hint": "插件总开关：关闭后，所有功能完全停止。",
+        "type": "bool",
+        "default": true
+    },
+    "night_mode": {
+        "description": "🌙 自动宵禁模式",
+        "type": "object",
+        "hint": "在指定时间段自动开启全员禁言（需Bot为管理员）。",
+        "items": {
+            "enable": {
+                "description": "启用宵禁",
+                "type": "bool",
+                "default": false
+            },
+            "start_hour": {
+                "description": "开始时间(小时)",
+                "hint": "24小时制，例如 0 代表凌晨0点。",
+                "type": "int",
+                "default": 0,
+                "slider": { 
+                    "min": 0, 
+                    "max": 23, 
+                    "step": 1 
+                }
+            },
+            "end_hour": {
+                "description": "结束时间(小时)",
+                "hint": "24小时制，例如 6 代表早上6点。",
+                "type": "int",
+                "default": 6,
+                "slider": { 
+                    "min": 0, 
+                    "max": 23, 
+                    "step": 1 
+                }
+            }
+        }
+    },
+    "mute_config": {
+        "description": "🤐 禁言与惩罚设置",
+        "type": "object",
+        "hint": "配置手动禁言指令及 LLM 自动惩罚的参数。",
+        "items": {
+            "default_duration": {
+                "description": "指令禁言默认时长(分钟)",
+                "hint": "使用 /禁言 指令但未指定时长时的默认值。",
+                "type": "int",
+                "default": 10,
+                "slider": {
+                    "min": 1,
+                    "max": 1440,
+                    "step": 1
+                }
+            },
+            "punish_min": {
+                "description": "LLM惩罚下限(分钟)",
+                "hint": "LLM 触发反击禁言时的最短随机时间。",
+                "type": "int",
+                "default": 1,
+                "slider": {
+                    "min": 1,
+                    "max": 60,
+                    "step": 1
+                }
+            },
+            "punish_max": {
+                "description": "LLM惩罚上限(分钟)",
+                "hint": "LLM 触发反击禁言时的最长随机时间。",
+                "type": "int",
+                "default": 10,
+                "slider": {
+                    "min": 1,
+                    "max": 1440,
+                    "step": 1
+                }
+            },
+            "max_multiplier": {
+                "description": "LLM惩罚倍率上限",
+                "hint": "针对屡教不改者，禁言时长 = 基础时长 × 违规次数。此处设置最大翻多少倍（设为 1 则关闭翻倍功能）。",
+                "type": "int",
+                "default": 10,
+                "slider": {
+                    "min": 1,
+                    "max": 100,
+                    "step": 1
+                }
+            },
+            "reset_days": {
+                "description": "惩罚重置冷静期(天)",
+                "hint": "如果用户在设定的天数内表现良好（没有再次违规），案底将自动归零。默认1天。",
+                "type": "int",
+                "default": 7,
+                "slider": {
+                    "min": 1,
+                    "max": 360,
+                    "step": 1
+                }
+            }
+        }
+    },
+    "clean_config": {
+        "description": "⚙️ 核心监控与清理设置",
+        "type": "object",
+        "hint": "配置哪些群启用插件功能，以及潜水清理规则。",
+        "items": {
+            "monitored_groups": {
+                "description": "管家监控群 (总开关)",
+                "hint": "必填！请在此添加群号。只有在此列表中的群，才会启用所有功能。",
+                "type": "list",
+                "default": []
+            },
+            "check_interval": {
+                "description": "自动检查间隔(小时)",
+                "hint": "每隔多久检测一次潜水成员。",
+                "type": "int",
+                "default": 24,
+                "slider": {
+                    "min": 1,
+                    "max": 168,
+                    "step": 1
+                }
+            },
+            "inactive_days": {
+                "description": "清理阈值(天)",
+                "hint": "超过多少天未发言视为不活跃 (至少1天)。",
+                "type": "int",
+                "default": 30,
+                "slider": {
+                    "min": 1,
+                    "max": 365,
+                    "step": 1
+                }
+            },
+            "auto_kick": {
+                "description": "自动踢人",
+                "hint": "开启后，达到阈值将直接移除成员；关闭则仅在日志/群内提示建议名单。",
+                "type": "bool",
+                "default": false,
+                "obvious_hint": true
+            },
+            "send_warning": {
+                "description": "发送警告",
+                "hint": "在达到清理时间前，艾特提醒成员冒泡。关闭则跳过发送警告直接踢人",
+                "type": "bool",
+                "default": true
+            },
+            "warning_days": {
+                "description": "提前警告(天)",
+                "hint": "在被清理前多少天发送警告。",
+                "type": "int",
+                "default": 7,
+                "slider": {
+                    "min": 0,
+                    "max": 30,
+                    "step": 1
+                }
+            },
+            "skip_admins": {
+                "description": "跳过管理员",
+                "hint": "群主和管理员不会被清理。",
+                "type": "bool",
+                "default": true
+            },
+            "enable_level_protection": {
+                "description": "启用等级保护",
+                "type": "bool",
+                "default": true
+            },
+            "level_protection_threshold": {
+                "description": "保护等级阈值",
+                "hint": "达到此QQ群等级及以上的成员不会被清理。",
+                "type": "int",
+                "default": 50
+            },
+            "send_kick_notification": {
+                "description": "清理结果通知",
+                "hint": "自动清理完成后在群内发送报告。",
+                "type": "bool",
+                "default": true
+            }
+        }
+    },
+    "approval_config": {
+        "description": "📝 入群审批设置",
+        "type": "object",
+        "hint": "自动处理加群请求 (需先在核心设置添加群号)。",
+        "items": {
+            "auto_approve": {
+                "description": "开启自动审批",
+                "hint": "开启后，将匹配关键词自动同意；若不匹配，则忽略请求留给人工处理。",
+                "type": "bool",
+                "default": false
+            },
+            "approval_keywords": {
+                "description": "通过关键词",
+                "hint": "申请理由中包含这些词会自动通过（每行一个）。",
+                "type": "list",
+                "default": []
+            }
+        }
+    },
+    "welcome_config": {
+        "description": "👋 迎新与告别设置",
+        "type": "object",
+        "hint": "设置入群欢迎语和退群提醒 (图片请在下方直接上传)。",
+        "items": {
+            "enable_welcome": {
+                "description": "开启入群欢迎",
+                "type": "bool",
+                "default": false
+            },
+            "is_at": {
+                "description": "欢迎时艾特新人",
+                "type": "bool",
+                "default": true
+            },
+            "welcome_msg": {
+                "description": "欢迎文案",
+                "type": "text",
+                "hint": "支持文字（可换行）。变量：{nickname} 用户名, {uid} QQ号。",
+                "default": "欢迎 {nickname} 加入本群！请查看群公告。"
+            },
+            "welcome_images_list": {
+                "description": "🖼️ 入群欢迎图 (WebUI上传)",
+                "type": "file",
+                "hint": "请直接点击上传图片。插件将仅从此处随机选取图片发送。",
+                "default": [],
+                "file_types": [
+                    "jpg",
+                    "jpeg",
+                    "png",
+                    "gif",
+                    "webp"
+                ]
+            },
+            "enable_bye": {
+                "description": "开启退群告别",
+                "type": "bool",
+                "default": true
+            },
+            "bye_msg": {
+                "description": "告别文案",
+                "type": "text",
+                "hint": "支持文字（可换行）。变量：{username} 用户名, {userid} QQ号。",
+                "default": "群友 {username}({userid}) 离开了大家庭。"
+            },
+            "bye_images_list": {
+                "description": "🖼️ 退群告别图 (WebUI上传)",
+                "type": "file",
+                "hint": "请直接点击上传图片。插件将仅从此处随机选取图片发送。",
+                "default": [],
+                "file_types": [
+                    "jpg",
+                    "jpeg",
+                    "png",
+                    "gif",
+                    "webp"
+                ]
+            },
+            "black_groups": {
+                "description": "迎新与告别黑名单群号",
+                "type": "list",
+                "hint": "在这些群不发送欢迎/告别消息（即使已开启监控）。",
+                "default": []
+            }
+        }
+    },
+    "security_config": {
+        "description": "🛡️ 安全与名单管理",
+        "type": "object",
+        "hint": "黑白名单与管理员设置。",
+        "items": {
+            "kick_black": {
+                "description": "退群自动拉黑",
+                "hint": "成员主动退群后，自动将其加入黑名单，禁止再次加群。",
+                "type": "bool",
+                "default": false,
+                "obvious_hint": true
+            },
+            "black_list": {
+                "description": "黑名单列表",
+                "hint": "此列表中的QQ号申请加群会被秒拒。",
+                "type": "list",
+                "default": []
+            },
+            "whitelist": {
+                "description": "白名单列表",
+                "hint": "此列表中的QQ号永远不会被自动潜水清理。",
+                "type": "list",
+                "default": []
+            },
+            "admin_list": {
+                "description": "插件管理员",
+                "hint": "拥有使用本插件 /管家监控 等管理命令权限的QQ号。",
+                "type": "list",
+                "default": []
+            }
+        }
+    }
+}

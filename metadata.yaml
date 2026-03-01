@@ -1,0 +1,7 @@
+name: astrbot_plugin_qq_group_manager
+display_name: QQ群小管家
+desc: 自动检测并清理不活跃的QQ群成员，支持等级保护功能
+version: 1.0.0
+author: 四次元未来
+repo: https://github.com/yourusername/astrbot_plugin_qq_group_manager
+
