@@ -30,6 +30,8 @@ class Main(Star):
         self.custom_welcome = {}
         self.event_dedup_cache = {}
         self.last_check_time = 0
+        self._last_night_mode_flag = "" 
+        self._registered_clients = set()
         
         self.plugin_id = "astrbot_plugin_qq_group_manager"
         
@@ -343,7 +345,9 @@ class Main(Star):
                 msg_chain = ""
                 if self._get_bool_cfg("welcome_config", "is_at", True):
                     msg_chain += f"[CQ:at,qq={user_id}] "
-                welcome_msg = welcome_msg.replace("{nickname}", str(user_id)).replace("{uid}", str(user_id))
+                
+                real_nickname = await self._get_member_name(group_id, user_id, client)
+                welcome_msg = welcome_msg.replace("{nickname}", real_nickname).replace("{uid}", str(user_id))
                 msg_chain += welcome_msg
                 
                 img_path = self._get_img_from_config("welcome_images_list")
@@ -491,7 +495,7 @@ class Main(Star):
             
             if multiplier > 1:
                 msg += f"这是用户第{violation_count}次违规，惩罚时长已根据规则自动翻倍x{multiplier}。\n"
-                msg += "请在回复中嘲讽或严厉批评用户不知悔改，并明确告诉用户因为是第{violation_count}次违规，所以惩罚加重了！"
+                msg += f"请在回复中嘲讽或严厉批评用户不知悔改，并明确告诉用户因为是第{violation_count}次违规，所以惩罚加重了！"
             else:
                 msg += "这是初犯或未触发翻倍，请告知用户已被禁言以示惩戒，并用嘲讽的语气回复。"
             return msg
@@ -519,10 +523,13 @@ class Main(Star):
                 await asyncio.sleep(5)
             
         try:
-            if hasattr(client, "on_request"):
-                client.on_request(self.on_group_request)
-            if hasattr(client, "on_notice"):
-                client.on_notice(self.on_group_notice)
+            client_id = id(client)
+            if client_id not in self._registered_clients:
+                if hasattr(client, "on_request"):
+                    client.on_request(self.on_group_request)
+                if hasattr(client, "on_notice"):
+                    client.on_notice(self.on_group_notice)
+                self._registered_clients.add(client_id)
         except Exception as e:
             self.logger.warning(f"注册事件失败: {e}")
 
@@ -575,10 +582,8 @@ class Main(Star):
 
         now = datetime.now()
         current_h = now.hour
-        current_m = now.minute
-
-        if current_m != 0:
-            return 
+        
+        current_flag = f"{now.year}-{now.month}-{now.day}_{current_h}"
 
         client = self._get_qq_client()
         if not client:
@@ -586,12 +591,14 @@ class Main(Star):
 
         action = None
         
-        if current_h == start_h:
+        if current_h == start_h and self._last_night_mode_flag != current_flag:
             action = True
             log_msg = "进入宵禁时间，开启全员禁言"
-        elif current_h == end_h:
+            self._last_night_mode_flag = current_flag
+        elif current_h == end_h and self._last_night_mode_flag != current_flag:
             action = False
             log_msg = "宵禁结束，解除全员禁言"
+            self._last_night_mode_flag = current_flag
             
         if action is not None:
             self.logger.info(f"触发宵禁检查: {log_msg}")
@@ -662,7 +669,8 @@ class Main(Star):
                         warn_ts = self.warned_users.get(user_key, 0)
                         if warn_ts == 0: 
                             warning_list.append(info)
-                        elif (current_ts - warn_ts) > 60: 
+
+                        elif (current_ts - warn_ts) > 86400: 
                             kick_list.append(info)
                         
                 elif send_warning and days_inactive >= (raw_inactive - warning_days):
@@ -775,16 +783,14 @@ class Main(Star):
                     local_data = json.load(f)
                     if not isinstance(local_data, dict):
                         return
-                    dynamic_keys = ['black_list', 'whitelist', 'monitored_groups', 'admin_list', 'black_groups']
                     for section, content in local_data.items():
                         if section not in self.config:
                             self.config[section] = {}
                         if isinstance(content, dict):
                             for k, v in content.items():
-                                if k in dynamic_keys and k not in self.config[section]:
+
+                                if k not in self.config[section]:
                                     self.config[section][k] = v
-                                elif k not in self.config[section] and not self.config.get('enabled'):
-                                    pass
         except Exception as e:
             self.logger.warning(f"读取本地配置出错: {e}")
 
@@ -811,22 +817,19 @@ class Main(Star):
                     raw_warned = d.get('warned_users', {})
                     self.warned_users = {}
                     for k, ts_val in raw_warned.items():
-                        if isinstance(ts_val, str):
-                            self.warned_users[k] = self._str_to_ts(ts_val)
+                        self.warned_users[k] = self._str_to_ts(ts_val) if isinstance(ts_val, str) else int(ts_val)
 
                     raw_activity = d.get('realtime_activity', {})
                     self.realtime_activity = {}
                     for gid, users in raw_activity.items():
                         self.realtime_activity[gid] = {}
                         for uid, ts_val in users.items():
-                            if isinstance(ts_val, str):
-                                self.realtime_activity[gid][uid] = self._str_to_ts(ts_val)
+                            self.realtime_activity[gid][uid] = self._str_to_ts(ts_val) if isinstance(ts_val, str) else int(ts_val)
 
                     raw_punish = d.get('punish_times', {})
                     self.punish_times = {}
                     for k, ts_val in raw_punish.items():
-                        if isinstance(ts_val, str):
-                            self.punish_times[k] = self._str_to_ts(ts_val)
+                        self.punish_times[k] = self._str_to_ts(ts_val) if isinstance(ts_val, str) else int(ts_val)
                             
                     current_time = int(time.time())
                     raw_enforce = d.get('enforce_mutes', {})
@@ -909,9 +912,10 @@ class Main(Star):
                     return int(comp.qq)
                 if hasattr(comp, 'user_id'):
                     return int(comp.user_id)
-        for part in event.message_str.split():
-            if part.isdigit() and len(part) >= 5:
-                return int(part)
+
+        parts = event.message_str.split()
+        if len(parts) > 1 and parts[1].isdigit() and len(parts[1]) >= 5:
+            return int(parts[1])
         return None
 
     def _extract_duration(self, event: AstrMessageEvent) -> int:
@@ -1190,6 +1194,11 @@ class Main(Star):
         if len(msg) < 2 or msg[1] == "列表":
             yield event.plain_result(f"{name}: {lst}" if lst else f"{name}为空")
             return
+            
+        if len(msg) < 3:
+            yield event.plain_result(f"缺少参数，正确格式如：/{name} 添加 12345")
+            return
+            
         try:
             target = int(msg[2])
             if msg[1] == "添加":
@@ -1210,7 +1219,7 @@ class Main(Star):
                     yield event.plain_result(f"{target} 不在{name}中")
         except Exception as e:
             self.logger.warning(f"列表操作异常: {e}")
-            yield event.plain_result("格式错误")
+            yield event.plain_result("参数必须是纯数字QQ号")
 
     @filter.command("清理检查")
     async def cmd_check(self, event: AstrMessageEvent):
@@ -1326,4 +1335,4 @@ class Main(Star):
         try:
             return int(level)
         except Exception:
-            return 0                
+            return 0
