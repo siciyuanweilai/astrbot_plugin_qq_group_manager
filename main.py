@@ -30,7 +30,7 @@ class Main(Star):
         self.custom_welcome = {}
         self.event_dedup_cache = {}
         self.last_check_time = 0
-        self._last_night_mode_flag = "" 
+        self._current_night_muted_state = None 
         self._registered_clients = set()
         
         self.plugin_id = "astrbot_plugin_qq_group_manager"
@@ -575,39 +575,38 @@ class Main(Star):
         
         start_h = self._get_cfg("night_mode", "start_hour", 0)
         end_h = self._get_cfg("night_mode", "end_hour", 6)
-        monitored = self._parse_list_config("clean_config", "monitored_groups")
         
+        if start_h == end_h:
+            return
+
+        monitored = self._parse_list_config("clean_config", "monitored_groups")
         if not monitored:
             return
 
         now = datetime.now()
         current_h = now.hour
         
-        current_flag = f"{now.year}-{now.month}-{now.day}_{current_h}"
+        if start_h < end_h:
+            should_be_muted = start_h <= current_h < end_h
+        else:
+            should_be_muted = current_h >= start_h or current_h < end_h
 
         client = self._get_qq_client()
         if not client:
             return
 
-        action = None
-        
-        if current_h == start_h and self._last_night_mode_flag != current_flag:
-            action = True
-            log_msg = "进入宵禁时间，开启全员禁言"
-            self._last_night_mode_flag = current_flag
-        elif current_h == end_h and self._last_night_mode_flag != current_flag:
-            action = False
-            log_msg = "宵禁结束，解除全员禁言"
-            self._last_night_mode_flag = current_flag
+        if self._current_night_muted_state != should_be_muted:
+            action_name = "开启" if should_be_muted else "解除"
+            self.logger.info(f"触发宵禁状态切换: {action_name}全员禁言")
             
-        if action is not None:
-            self.logger.info(f"触发宵禁检查: {log_msg}")
             for gid in monitored:
                 try:
-                    await self.api_mute_whole(int(gid), action)
+                    await self.api_mute_whole(int(gid), should_be_muted)
                     await asyncio.sleep(1) 
                 except Exception as e:
                     self.logger.error(f"群 {gid} 宵禁操作失败: {e}")
+            
+            self._current_night_muted_state = should_be_muted
 
     # ==================== 清理逻辑 ====================
 
@@ -891,10 +890,12 @@ class Main(Star):
             self.logger.error(f"保存数据失败: {e}")
 
     def is_admin(self, user_id: str) -> bool:
+        if not str(user_id).isdigit(): return False
         admins = self._parse_list_config("security_config", "admin_list")
         return int(user_id) in admins
 
     def is_whitelisted(self, user_id: str) -> bool:
+        if not str(user_id).isdigit(): return False
         wl = self._parse_list_config("security_config", "whitelist")
         return int(user_id) in wl
 
@@ -906,11 +907,11 @@ class Main(Star):
             if getattr(comp, 'type', '').lower() == 'at':
                 if hasattr(comp, 'data') and isinstance(comp.data, dict):
                     uid = comp.data.get('qq') or comp.data.get('user_id')
-                    if uid:
+                    if uid and str(uid).isdigit():
                         return int(uid)
-                if hasattr(comp, 'qq'):
+                if hasattr(comp, 'qq') and str(comp.qq).isdigit():
                     return int(comp.qq)
-                if hasattr(comp, 'user_id'):
+                if hasattr(comp, 'user_id') and str(comp.user_id).isdigit():
                     return int(comp.user_id)
 
         parts = event.message_str.split()
@@ -1173,7 +1174,7 @@ class Main(Star):
     @filter.command("管家监控")
     async def cmd_monitor(self, event: AstrMessageEvent):
         if not self.is_admin(str(event.get_sender_id())): return
-        async for res in self._handle_list_cmd(event, "clean_config", "monitored_groups", "管家监控群"): 
+        async for res in self._handle_list_cmd(event, "clean_config", "monitored_groups", "管家监控"): 
             yield res
 
     @filter.command("白名单")
@@ -1217,9 +1218,11 @@ class Main(Star):
                     yield event.plain_result(f"已删除 {target}")
                 else:
                     yield event.plain_result(f"{target} 不在{name}中")
+            else:
+                yield event.plain_result(f"未知操作，请使用: /{name} 添加/删除/列表 [号码]")
         except Exception as e:
             self.logger.warning(f"列表操作异常: {e}")
-            yield event.plain_result("参数必须是纯数字QQ号")
+            yield event.plain_result("参数必须是纯数字号码")
 
     @filter.command("清理检查")
     async def cmd_check(self, event: AstrMessageEvent):
@@ -1314,22 +1317,22 @@ class Main(Star):
         return False
 
     async def update_member_cache(self):
-        async with self.lock:
-            try:
-                if not self.is_alive:
-                    return
-                monitored = self._parse_list_config("clean_config", "monitored_groups")
-                if not monitored:
-                    return
-                self.logger.debug(f"更新成员缓存 ({len(monitored)}个群)")
-                for gid in monitored:
-                    mems = await self.api_get_group_member_list(int(gid))
-                    if mems:
+        try:
+            if not self.is_alive:
+                return
+            monitored = self._parse_list_config("clean_config", "monitored_groups")
+            if not monitored:
+                return
+            self.logger.debug(f"更新成员缓存 ({len(monitored)}个群)")
+            for gid in monitored:
+                mems = await self.api_get_group_member_list(int(gid))
+                if mems:
+                    async with self.lock: 
                         self.member_cache[str(gid)] = {'members': mems, 'update_time': int(time.time())}
-                    await asyncio.sleep(0.5)
-                self._save_data_sync() 
-            except Exception as e:
-                self.logger.error(f"更新失败: {e}")
+                await asyncio.sleep(0.5)
+            await self.save_data() 
+        except Exception as e:
+            self.logger.error(f"更新失败: {e}")
 
     def _parse_level(self, level) -> int:
         try:
