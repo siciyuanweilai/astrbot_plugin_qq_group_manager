@@ -3,6 +3,7 @@ import time
 import asyncio
 import random
 import os
+import re 
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Union, Any
@@ -128,7 +129,10 @@ class Main(Star):
 
     def _is_duplicate_event(self, key: str, ttl: int = 5) -> bool:
         current_time = time.time()
-        self.event_dedup_cache = {k: v for k, v in self.event_dedup_cache.items() if current_time - v < ttl}
+        expired_keys = [k for k, v in self.event_dedup_cache.items() if current_time - v >= ttl]
+        for k in expired_keys:
+            del self.event_dedup_cache[k]
+            
         if key in self.event_dedup_cache:
             return True
         self.event_dedup_cache[key] = current_time
@@ -468,9 +472,10 @@ class Main(Star):
         multiplier = min(violation_count, max_mul) 
         final_duration = base_duration * multiplier
         
-        if final_duration > 2592000:
-            final_duration = 2592000
-        
+        MAX_MUTE_SECONDS = 30 * 24 * 3600
+        if final_duration > MAX_MUTE_SECONDS:
+            final_duration = MAX_MUTE_SECONDS
+            
         success = await self.api_mute_member(int(group_id), int(user_id), final_duration)
         
         if success:
@@ -1300,8 +1305,6 @@ class Main(Star):
         return False
 
     async def update_member_cache(self):
-        if self.lock.locked():
-            return
         async with self.lock:
             try:
                 if not self.is_alive:
