@@ -61,10 +61,14 @@ class Main(Star):
                 return
 
             self.logger.info(f"QQ群小管家 已启动")
-            self._bg_task = asyncio.create_task(self._background_loop())
 
         except Exception as e:
             self.logger.error(f"初始化失败: {e}")
+
+    @filter.on_astrbot_loaded()
+    async def on_loaded(self, event=None):
+        """框架加载完成后安全启动后台任务"""
+        self._bg_task = asyncio.create_task(self._background_loop())
 
     # ==================== 核心配置工具 ====================
 
