@@ -26,7 +26,11 @@ class Main(Star):
         self.punish_counts: Dict[str, int] = {}
         self.punish_times: Dict[str, int] = {}
         self.enforce_mutes: Dict[str, int] = {}
+        
         self.blacklist = []
+        self.whitelist = []
+        self.admin_list = []
+        
         self.custom_welcome = {}
         self.event_dedup_cache = {}
         self.last_check_time = 0
@@ -49,9 +53,8 @@ class Main(Star):
 
         try:
             self.load_config_safe()
+            self._update_list_caches()
             self.load_data()
-
-            self.blacklist = self._parse_list_config("security_config", "black_list")
 
             if not self.config.get("enabled", True):
                 self.logger.info("插件已禁用")
@@ -79,6 +82,7 @@ class Main(Star):
         if section not in self.config:
             self.config[section] = {}
         self.config[section][key] = value
+        self._update_list_caches()
         await self.save_config()
 
     def _parse_list_config(self, section: str, key: str) -> List[int]:
@@ -89,6 +93,11 @@ class Main(Star):
             if not val.strip(): return []
             return [int(x.strip()) for x in val.split(',') if x.strip().isdigit()]
         return []
+        
+    def _update_list_caches(self):
+        self.blacklist = self._parse_list_config("security_config", "black_list")
+        self.whitelist = self._parse_list_config("security_config", "whitelist")
+        self.admin_list = self._parse_list_config("security_config", "admin_list")
 
     # ==================== 时间格式转换工具 ====================
 
@@ -235,8 +244,7 @@ class Main(Star):
                 client = self._get_qq_client()
                 if not client: return
 
-                current_blacklist = self._parse_list_config("security_config", "black_list")
-                if user_id in current_blacklist:
+                if user_id in self.blacklist:
                     self.logger.info(f"拒绝黑名单用户 {user_id}")
                     await client.call_action('set_group_add_request', flag=flag, sub_type=sub_type, approve=False, reason="主动退群和黑名单不再同意进群，别申请啦！")
                     return
@@ -321,7 +329,9 @@ class Main(Star):
                         if client:
                             await client.call_action('send_group_msg', group_id=group_id, message=f"[CQ:at,qq={operator_id}] \n{msg}")
                     else:
-                        del self.enforce_mutes[user_key]
+                        async with self.lock:
+                            if user_key in self.enforce_mutes:
+                                del self.enforce_mutes[user_key]
                         await self.save_data() 
             return 
 
@@ -371,7 +381,6 @@ class Main(Star):
                         if user_id not in current_blacklist:
                             current_blacklist.append(user_id)
                             await self._set_cfg("security_config", "black_list", current_blacklist)
-                            self.blacklist = current_blacklist
                             self.logger.info(f"{user_id} 主动退群自动拉黑")
                 except Exception as e:
                     self.logger.error(f"拉黑退群用户失败: {e}")
@@ -414,15 +423,18 @@ class Main(Star):
                 return
             
             gid_str = str(group_id)
-            if gid_str not in self.realtime_activity:
-                self.realtime_activity[gid_str] = {}
-            self.realtime_activity[gid_str][user_id] = int(time.time())
-            
             user_key = f"{gid_str}_{user_id}"
-            if user_key in self.warned_users:
-                self.logger.info(f"监测到 群[{group_id}] [{user_id}] 冒泡了，已解除警告")
-                self.warned_users.pop(user_key, None)
-                await self.save_data() 
+            
+            async with self.lock:
+                if gid_str not in self.realtime_activity:
+                    self.realtime_activity[gid_str] = {}
+                self.realtime_activity[gid_str][user_id] = int(time.time())
+                
+                if user_key in self.warned_users:
+                    self.logger.info(f"监测到 群[{group_id}] [{user_id}] 冒泡了，已解除警告")
+                    self.warned_users.pop(user_key, None)
+                    asyncio.create_task(self.save_data())
+                    
         except Exception as e:
             self.logger.warning(f"处理群消息活动缓存失败: {e}")
 
@@ -442,6 +454,10 @@ class Main(Star):
         if not group_id:
             return "当前不是群聊，无法执行禁言操作。"
             
+        monitored = self._parse_list_config("clean_config", "monitored_groups")
+        if int(group_id) not in monitored:
+            return "当前群聊未被管理员配置为受监控的群，无法执行惩罚操作。"
+            
         if self.is_admin(user_id) or self.is_whitelisted(user_id):
             return "检测到辱骂行为，但对方是管理员/白名单用户，无法禁言。请用言语反击。"
             
@@ -450,15 +466,16 @@ class Main(Star):
         
         reset_days = self._get_cfg("mute_config", "reset_days", 1)
         
-        if key in self.punish_times:
-            last_time = self.punish_times[key]
-            if (current_time - last_time) > (reset_days * 86400):
-                self.punish_counts[key] = 0
-                self.logger.info(f"群友 {user_id} 表现良好超过{reset_days}天，案底已重置")
+        async with self.lock:
+            if key in self.punish_times:
+                last_time = self.punish_times[key]
+                if (current_time - last_time) > (reset_days * 86400):
+                    self.punish_counts[key] = 0
+                    self.logger.info(f"群友 {user_id} 表现良好超过{reset_days}天，案底已重置")
 
-        violation_count = self.punish_counts.get(key, 0) + 1
-        self.punish_counts[key] = violation_count
-        self.punish_times[key] = current_time 
+            violation_count = self.punish_counts.get(key, 0) + 1
+            self.punish_counts[key] = violation_count
+            self.punish_times[key] = current_time 
             
         min_min = self._get_cfg("mute_config", "punish_min", 1)
         max_min = self._get_cfg("mute_config", "punish_max", 10)
@@ -483,7 +500,8 @@ class Main(Star):
         success = await self.api_mute_member(int(group_id), int(user_id), final_duration)
         
         if success:
-            self.enforce_mutes[key] = current_time + final_duration
+            async with self.lock:
+                self.enforce_mutes[key] = current_time + final_duration
             await self.save_data() 
             
             negative_pool = [13, 38, 46, 77, 178, 317, 323, 351, 355, 395]
@@ -513,32 +531,23 @@ class Main(Star):
 
     async def _background_loop(self):
         """主后台循环：包含宵禁检测和潜水清理"""
-        client = None
-        while not client:
-            try:
-                client = self._get_qq_client()
-                if not client:
-                    await asyncio.sleep(5)
-            except Exception:
-                await asyncio.sleep(5)
-            
-        try:
-            client_id = id(client)
-            if client_id not in self._registered_clients:
-                if hasattr(client, "on_request"):
-                    client.on_request(self.on_group_request)
-                if hasattr(client, "on_notice"):
-                    client.on_notice(self.on_group_notice)
-                self._registered_clients.add(client_id)
-        except Exception as e:
-            self.logger.warning(f"注册事件失败: {e}")
-
         if self.last_check_time == 0:
             self.last_check_time = time.time()
             await self.save_data() 
 
         while self.is_alive:
             try:
+                client = self._get_qq_client()
+                if client:
+                    client_id = id(client)
+                    if client_id not in self._registered_clients:
+                        if hasattr(client, "on_request"):
+                            client.on_request(self.on_group_request)
+                        if hasattr(client, "on_notice"):
+                            client.on_notice(self.on_group_notice)
+                        self._registered_clients.add(client_id)
+                        self.logger.info("已将事件监听挂载至 QQ/OneBot 客户端")
+
                 await self.update_member_cache()
                 if not self.member_cache:
                     await asyncio.sleep(60)
@@ -553,8 +562,7 @@ class Main(Star):
 
                 current_ts = time.time()
                 if current_ts - self.last_check_time >= check_interval:
-                    async with self.lock:
-                        await self.check_inactive_members()
+                    await self.check_inactive_members()
                     self.last_check_time = current_ts
                     await self.save_data() 
                     self.logger.info(f"潜水清理检查完成，下次将在 {check_interval} 秒后")
@@ -629,16 +637,17 @@ class Main(Star):
         
         current_ts = int(time.time())
         
-        for gid, data in self.member_cache.items():
+        for gid, data in list(self.member_cache.items()):
             members = data.get('members', [])
             kick_list = []    
             warning_list = []
             
-            stats = {"total": len(members), "kick": 0, "warn": 0, "admin": 0, "active": 0}
+            stats = {"total": len(members), "kick": 0, "warn": 0, "admin": 0, "whitelist": 0, "active": 0}
             
             for m in members:
                 uid = str(m.get('user_id'))
                 if self.is_whitelisted(uid):
+                    stats["whitelist"] += 1
                     continue
                 
                 if m.get('role') in ['owner', 'admin'] and self._get_bool_cfg("clean_config", "skip_admins", True): 
@@ -678,7 +687,7 @@ class Main(Star):
             
             stats["kick"] = len(kick_list)
             stats["warn"] = len(warning_list)
-            stats["active"] = stats["total"] - stats["kick"] - stats["warn"] - stats["admin"]
+            stats["active"] = stats["total"] - stats["kick"] - stats["warn"] - stats["admin"] - stats["whitelist"]
             
             self.logger.info(f"群[{gid}] 扫描 (阈值{raw_inactive}天): 待踢[{stats['kick']}] 待警[{stats['warn']}]")
 
@@ -689,7 +698,8 @@ class Main(Star):
             if warning_list or kick_list:
                 await asyncio.sleep(5)
         
-        self._clean_cache_data()
+        async with self.lock:
+            self._clean_cache_data()
 
     async def send_warnings(self, group_id: str, members: List[Dict]):
         if not self._get_bool_cfg("clean_config", "send_warning", False):
@@ -699,7 +709,8 @@ class Main(Star):
             count = 0
             for m in members[:10]:
                 msg += f"[CQ:at,qq={m['user_id']}] 未发言{m['days']}天\n"
-                self.warned_users[f"{group_id}_{m['user_id']}"] = int(time.time())
+                async with self.lock:
+                    self.warned_users[f"{group_id}_{m['user_id']}"] = int(time.time())
                 count += 1
             
             client = self._get_qq_client()
@@ -728,12 +739,14 @@ class Main(Star):
                 real_last = self.realtime_activity.get(str(group_id), {}).get(uid, 0)
                 if (current_ts - real_last) < 60: 
                     self.logger.debug(f"拦截误杀: 群友 {uid} 刚刚冒泡了！")
-                    self.warned_users.pop(f"{group_id}_{uid}", None)
+                    async with self.lock:
+                        self.warned_users.pop(f"{group_id}_{uid}", None)
                     continue
 
                 if await self.api_kick_member(int(group_id), int(m['user_id'])):
                     count += 1
-                    self.warned_users.pop(f"{group_id}_{uid}", None)
+                    async with self.lock:
+                        self.warned_users.pop(f"{group_id}_{uid}", None)
             
             if count > 0 and self._get_bool_cfg("clean_config", "send_kick_notification", True):
                  await client.call_action('send_group_msg', group_id=int(group_id), message=f"已自动清理 {count} 名不活跃成员")
@@ -810,26 +823,40 @@ class Main(Star):
             try:
                 with open(self.data_file, 'r', encoding='utf-8') as f:
                     d = json.load(f)
-                    self.custom_welcome = d.get('custom_welcome', {})
-                    self.punish_counts = d.get('punish_counts', {}) 
                     
+                self.custom_welcome = d.get('custom_welcome', {})
+                self.punish_counts = d.get('punish_counts', {}) 
+                
+                try:
                     raw_warned = d.get('warned_users', {})
                     self.warned_users = {}
                     for k, ts_val in raw_warned.items():
                         self.warned_users[k] = self._str_to_ts(ts_val) if isinstance(ts_val, str) else int(ts_val)
+                except Exception as e:
+                    self.logger.warning(f"加载警告记录失败，已重置: {e}")
+                    self.warned_users = {}
 
+                try:
                     raw_activity = d.get('realtime_activity', {})
                     self.realtime_activity = {}
                     for gid, users in raw_activity.items():
                         self.realtime_activity[gid] = {}
                         for uid, ts_val in users.items():
                             self.realtime_activity[gid][uid] = self._str_to_ts(ts_val) if isinstance(ts_val, str) else int(ts_val)
+                except Exception as e:
+                    self.logger.warning(f"加载活跃度记录失败，已重置: {e}")
+                    self.realtime_activity = {}
 
+                try:
                     raw_punish = d.get('punish_times', {})
                     self.punish_times = {}
                     for k, ts_val in raw_punish.items():
                         self.punish_times[k] = self._str_to_ts(ts_val) if isinstance(ts_val, str) else int(ts_val)
-                            
+                except Exception as e:
+                    self.logger.warning(f"加载惩罚时间记录失败，已重置: {e}")
+                    self.punish_times = {}
+                        
+                try:
                     current_time = int(time.time())
                     raw_enforce = d.get('enforce_mutes', {})
                     self.enforce_mutes = {}
@@ -837,12 +864,18 @@ class Main(Star):
                         ts = self._str_to_ts(val) if isinstance(val, str) else int(val)
                         if ts > current_time:  
                             self.enforce_mutes[k] = ts
+                except Exception as e:
+                    self.logger.warning(f"加载强制禁言记录失败，已重置: {e}")
+                    self.enforce_mutes = {}
 
+                try:
                     raw_time = d.get('last_check_time', "")
                     self.last_check_time = self._str_to_ts(raw_time) if isinstance(raw_time, str) else 0
+                except Exception:
+                    self.last_check_time = 0
 
             except Exception as e: 
-                self.logger.error(f"加载数据失败: {e}")
+                self.logger.error(f"加载数据文件失败: {e}")
 
     async def save_data(self):
         async with self.lock:
@@ -851,23 +884,23 @@ class Main(Star):
     def _save_data_sync(self):
         try:
             save_activity = {}
-            for gid, users in self.realtime_activity.items():
+            for gid, users in list(self.realtime_activity.items()):
                 save_activity[gid] = {}
-                for uid, ts in users.items():
+                for uid, ts in list(users.items()):
                     save_activity[gid][uid] = self._ts_to_str(ts)
             
             save_punish = {}
-            for k, ts in self.punish_times.items():
+            for k, ts in list(self.punish_times.items()):
                 save_punish[k] = self._ts_to_str(ts)
                 
             save_warned = {}
-            for k, ts in self.warned_users.items():
+            for k, ts in list(self.warned_users.items()):
                 save_warned[k] = self._ts_to_str(ts)
 
             current_time = int(time.time())
             keys_to_delete = []
             save_enforce = {}
-            for k, ts in self.enforce_mutes.items():
+            for k, ts in list(self.enforce_mutes.items()):
                 if current_time >= ts:
                     keys_to_delete.append(k)
                 else:
@@ -879,7 +912,7 @@ class Main(Star):
                 'warned_users': save_warned, 
                 'realtime_activity': save_activity,
                 'custom_welcome': self.custom_welcome,
-                'punish_counts': self.punish_counts,
+                'punish_counts': self.punish_counts.copy(),
                 'punish_times': save_punish,
                 'enforce_mutes': save_enforce,  
                 'last_check_time': self._ts_to_str(self.last_check_time)
@@ -891,13 +924,11 @@ class Main(Star):
 
     def is_admin(self, user_id: str) -> bool:
         if not str(user_id).isdigit(): return False
-        admins = self._parse_list_config("security_config", "admin_list")
-        return int(user_id) in admins
+        return int(user_id) in self.admin_list
 
     def is_whitelisted(self, user_id: str) -> bool:
         if not str(user_id).isdigit(): return False
-        wl = self._parse_list_config("security_config", "whitelist")
-        return int(user_id) in wl
+        return int(user_id) in self.whitelist
 
     # ==================== 禁言辅助逻辑 ====================
 
@@ -1092,9 +1123,10 @@ class Main(Star):
             return
             
         key = f"{group_id}_{target_id}"
-        if key in self.enforce_mutes:
-            del self.enforce_mutes[key]
-            await self.save_data()
+        async with self.lock:
+            if key in self.enforce_mutes:
+                del self.enforce_mutes[key]
+        await self.save_data()
             
         if await self.api_mute_member(int(group_id), target_id, 0):
             client = self._get_qq_client()
@@ -1119,18 +1151,20 @@ class Main(Star):
         key = f"{group_id}_{target_id}"
         cleared = False
         
-        if key in self.punish_counts:
-            del self.punish_counts[key]
-            cleared = True
-            
-        if key in self.punish_times:
-            del self.punish_times[key]
-            cleared = True
-            
-        if key in self.enforce_mutes:
-            del self.enforce_mutes[key]
-            cleared = True
-            await self.api_mute_member(int(group_id), target_id, 0)
+        async with self.lock:
+            if key in self.punish_counts:
+                del self.punish_counts[key]
+                cleared = True
+                
+            if key in self.punish_times:
+                del self.punish_times[key]
+                cleared = True
+                
+            if key in self.enforce_mutes:
+                del self.enforce_mutes[key]
+                cleared = True
+                
+        await self.api_mute_member(int(group_id), target_id, 0)
         
         client = self._get_qq_client()
         name = await self._get_member_name(int(group_id), target_id, client)
@@ -1206,7 +1240,6 @@ class Main(Star):
                 if target not in lst:
                     lst.append(target)
                     await self._set_cfg(section, key, lst)
-                    if key == "black_list": self.blacklist = lst
                     yield event.plain_result(f"已添加 {target}")
                 else:
                     yield event.plain_result("已存在")
@@ -1214,7 +1247,6 @@ class Main(Star):
                 if target in lst:
                     lst.remove(target)
                     await self._set_cfg(section, key, lst)
-                    if key == "black_list": self.blacklist = lst
                     yield event.plain_result(f"已删除 {target}")
                 else:
                     yield event.plain_result(f"{target} 不在{name}中")
@@ -1231,8 +1263,7 @@ class Main(Star):
         yield event.plain_result("开始检查...")
         if not self.member_cache:
             await self.update_member_cache()
-        async with self.lock:
-            await self.check_inactive_members()
+        await self.check_inactive_members()
         yield event.plain_result("完成")
 
     @filter.command("更新成员")
@@ -1297,7 +1328,7 @@ class Main(Star):
             p_name = str(getattr(inst, "platform_name", "")).lower()
             if "qq" in p_name or "onebot" in p_name:
                 return inst.get_client()
-        return insts[0].get_client()
+        return None 
 
     async def api_get_group_member_list(self, group_id: int) -> List[Dict]:
         try:
@@ -1327,7 +1358,7 @@ class Main(Star):
             for gid in monitored:
                 mems = await self.api_get_group_member_list(int(gid))
                 if mems:
-                    async with self.lock: 
+                    async with self.lock:
                         self.member_cache[str(gid)] = {'members': mems, 'update_time': int(time.time())}
                 await asyncio.sleep(0.5)
             await self.save_data() 
