@@ -1,6 +1,7 @@
 name: astrbot_plugin_qq_group_manager
 display_name: QQ群小管家
-desc: QQ群小管家是为 AstrBot 设计的简单自动化群管插件，集成了 LLM 智能回怼、潜水清理、宵禁管理与迎新功能。
+desc: [仅 aiocqhttp] QQ群小管家是为 AstrBot 设计的简单自动化群管插件，集成了 LLM 智能回怼、潜水清理、宵禁管理与迎新功能。
 version: 1.0.0
 author: 四次元未来
 repo: https://github.com/siciyuanweilai/astrbot_plugin_qq_group_manager
+

@@ -9,11 +9,10 @@ from pathlib import Path
 from typing import Dict, List, Union, Any
 
 from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
-@register("qq_group_manager", "四次元未来", "QQ群小管家", "1.0.0")
 class Main(Star):
     def __init__(self, context: Context, config: dict = None) -> None:
         super().__init__(context)
@@ -31,10 +30,10 @@ class Main(Star):
         self.custom_welcome = {}
         self.event_dedup_cache = {} 
         self.last_check_time = 0
-        self.plugin_id = "astrbot_plugin_qq_group_manager"
-        self.data_dir = Path(f"data/plugin_data/{self.plugin_id}")
+        
+        self.data_dir = StarTools.get_data_dir()
         self.data_file = self.data_dir / "data.json"
-        self.config_path = Path(f"data/config/{self.plugin_id}_config.json")
+        self.config_path = self.data_dir / "config.json"
         
         try:
             self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -69,21 +68,27 @@ class Main(Star):
 
     def _get_bool_cfg(self, section: str, key: str, default: bool = False) -> bool:
         val = self._get_cfg(section, key, default)
-        if isinstance(val, bool): return val
-        if isinstance(val, str): return val.lower() in ['true', '1', 'yes', 'on']
-        if isinstance(val, int): return val == 1
+        if isinstance(val, bool): 
+            return val
+        if isinstance(val, str): 
+            return val.lower() in ['true', '1', 'yes', 'on']
+        if isinstance(val, int): 
+            return val == 1
         return default
 
     def _set_cfg(self, section: str, key: str, value: Any):
-        if section not in self.config: self.config[section] = {}
+        if section not in self.config: 
+            self.config[section] = {}
         self.config[section][key] = value
         self.save_config()
 
     def _parse_list_config(self, section: str, key: str) -> List[int]:
         val = self._get_cfg(section, key, [])
-        if isinstance(val, list): return [int(x) for x in val if str(x).isdigit()]
+        if isinstance(val, list): 
+            return [int(x) for x in val if str(x).isdigit()]
         if isinstance(val, str):
-            if not val.strip(): return []
+            if not val.strip(): 
+                return []
             return [int(x.strip()) for x in val.split(',') if x.strip().isdigit()]
         return []
 
@@ -91,19 +96,21 @@ class Main(Star):
 
     def _ts_to_str(self, ts: Union[int, float]) -> str:
         """时间戳转字符串"""
-        if not ts: return ""
+        if not ts: 
+            return ""
         try:
             return datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M:%S")
-        except:
+        except Exception:
             return ""
 
     def _str_to_ts(self, date_str: str) -> int:
         """字符串转时间戳"""
-        if not date_str or not isinstance(date_str, str): return 0
+        if not date_str or not isinstance(date_str, str): 
+            return 0
         try:
             dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
             return int(dt.timestamp())
-        except:
+        except Exception:
             return 0
     
     # ==================== 人设读取逻辑 ====================
@@ -120,7 +127,8 @@ class Main(Star):
             provider = self.context.get_using_provider()
             if provider and hasattr(provider, "system_prompt") and provider.system_prompt: 
                 return provider.system_prompt
-        except: pass
+        except Exception: 
+            pass
         return (
             "你是一个高效、客观、偶尔带点毒舌的群管理员。你维护群组秩序，"
             "对违规者严厉，对友好者礼貌。说话简洁明了，不拖泥带水。"
@@ -131,7 +139,8 @@ class Main(Star):
     def _is_duplicate_event(self, key: str, ttl: int = 5) -> bool:
         current_time = time.time()
         self.event_dedup_cache = {k: v for k, v in self.event_dedup_cache.items() if current_time - v < ttl}
-        if key in self.event_dedup_cache: return True
+        if key in self.event_dedup_cache: 
+            return True
         self.event_dedup_cache[key] = current_time
         return False
 
@@ -154,7 +163,7 @@ class Main(Star):
             if not p.is_absolute():
                 try:
                     p = Path(StarTools.get_data_dir()) / path_str
-                except:
+                except Exception:
                     if not p.exists():
                         p = Path.cwd() / path_str
 
@@ -167,14 +176,16 @@ class Main(Star):
         return ""
 
     def _get_local_image_cq(self, path: str) -> str:
-        if not path: return ""
+        if not path: 
+            return ""
         try:
             clean_path = path.replace("file:///", "").replace("file://", "")
             abs_path = os.path.abspath(clean_path)
             if os.path.exists(abs_path):
                 final_path = abs_path.replace("\\", "/")
                 return f"[CQ:image,file=file:///{final_path}]"
-        except: pass
+        except Exception: 
+            pass
         return ""
     
     # ==================== 辅助：获取群成员昵称 ====================
@@ -186,35 +197,41 @@ class Main(Star):
                 for m in members:
                     if int(m.get('user_id', 0)) == user_id:
                         return m.get('card') or m.get('nickname') or str(user_id)
-        except: pass
+        except Exception: 
+            pass
 
         if client:
             try:
                 info = await client.call_action('get_group_member_info', group_id=group_id, user_id=user_id, no_cache=False)
                 return info.get('card') or info.get('nickname') or str(user_id)
-            except: pass
+            except Exception: 
+                pass
             
             try:
                 info = await client.call_action('get_stranger_info', user_id=user_id, no_cache=False)
                 return info.get('nickname') or str(user_id)
-            except: pass
+            except Exception: 
+                pass
             
         return str(user_id)
 
     # ==================== 业务逻辑：加群申请 ====================
     
     async def on_group_request(self, event):
-        if not self.is_alive or not self.config.get("enabled", True): return
+        if not self.is_alive or not self.config.get("enabled", True): 
+            return
         try:
             raw_gid = getattr(event, 'group_id', 0)
             user_id = int(getattr(event, 'user_id', 0))
             group_id = int(raw_gid)
             
             monitored = self._parse_list_config("clean_config", "monitored_groups")
-            if group_id not in monitored: return
+            if group_id not in monitored: 
+                return
 
             dedup_key = f"req_{group_id}_{user_id}"
-            if self._is_duplicate_event(dedup_key, ttl=5): return
+            if self._is_duplicate_event(dedup_key, ttl=5): 
+                return
 
             request_type = getattr(event, 'request_type', None)
             sub_type = getattr(event, 'sub_type', None)
@@ -225,7 +242,8 @@ class Main(Star):
                 self.logger.info(f"收到加群请求: 群[{group_id}] 用户[{user_id}] {comment}")
 
                 client = self._get_qq_client()
-                if not client: return
+                if not client: 
+                    return
 
                 current_blacklist = self._parse_list_config("security_config", "black_list")
                 if user_id in current_blacklist:
@@ -238,19 +256,24 @@ class Main(Star):
                     matched = False
                     if keywords:
                         valid_kws = [k for k in keywords if k]
-                        if valid_kws and any(str(k).lower() in comment.lower() for k in valid_kws): matched = True
+                        if valid_kws and any(str(k).lower() in comment.lower() for k in valid_kws): 
+                            matched = True
                     if matched:
                         self.logger.info(f"自动同意 {user_id} 入群")
                         await client.call_action('set_group_add_request', flag=flag, sub_type=sub_type, approve=True)
-        except Exception as e: self.logger.error(f"处理入群请求出错: {e}")
+        except Exception as e: 
+            self.logger.error(f"处理入群请求出错: {e}")
 
     # ==================== 业务逻辑：群通知 (迎新/退群/解禁) ====================
 
     async def on_group_notice(self, event):
-        if not self.is_alive or not self.config.get("enabled", True): return
+        if not self.is_alive or not self.config.get("enabled", True): 
+            return
         raw_gid = getattr(event, 'group_id', 0)
-        try: group_id = int(raw_gid)
-        except: return
+        try: 
+            group_id = int(raw_gid)
+        except Exception: 
+            return
 
         notice_type = getattr(event, 'notice_type', None)
         sub_type = getattr(event, 'sub_type', None)
@@ -264,8 +287,10 @@ class Main(Star):
             self_id = int(getattr(event, 'self_id', 0))
             if self_id == 0 and client:
                 try: 
-                    if hasattr(client, 'self_id'): self_id = int(client.self_id)
-                except: pass
+                    if hasattr(client, 'self_id'): 
+                        self_id = int(client.self_id)
+                except Exception: 
+                    pass
 
             if (sub_type == "lift_ban" or duration == 0) and operator_id != self_id:
                 user_key = f"{group_id}_{user_id}"
@@ -311,34 +336,42 @@ class Main(Star):
 
         
         monitored = self._parse_list_config("clean_config", "monitored_groups")
-        if group_id not in monitored: return
+        if group_id not in monitored: 
+            return
 
         black_groups = self._parse_list_config("welcome_config", "black_groups")
-        if group_id in black_groups: return
+        if group_id in black_groups: 
+            return
 
         if notice_type == "group_increase":
             dedup_key = f"welcome_{group_id}_{user_id}"
-            if self._is_duplicate_event(dedup_key, ttl=5): return
-            if not self._get_bool_cfg("welcome_config", "enable_welcome", False): return
+            if self._is_duplicate_event(dedup_key, ttl=5): 
+                return
+            if not self._get_bool_cfg("welcome_config", "enable_welcome", False): 
+                return
             try:
                 default_msg = self._get_cfg("welcome_config", "welcome_msg", "欢迎新成员！")
                 welcome_msg = self.custom_welcome.get(str(group_id)) or default_msg
                 msg_chain = ""
-                if self._get_bool_cfg("welcome_config", "is_at", True): msg_chain += f"[CQ:at,qq={user_id}] "
+                if self._get_bool_cfg("welcome_config", "is_at", True): 
+                    msg_chain += f"[CQ:at,qq={user_id}] "
                 welcome_msg = welcome_msg.replace("{nickname}", str(user_id)).replace("{uid}", str(user_id))
                 msg_chain += welcome_msg
                 
                 img_path = self._get_img_from_config("welcome_images_list")
-                if img_path: msg_chain += self._get_local_image_cq(img_path)
+                if img_path: 
+                    msg_chain += self._get_local_image_cq(img_path)
                 
                 if client:
                     await asyncio.sleep(1) 
                     await client.call_action('send_group_msg', group_id=group_id, message=msg_chain)
-            except Exception as e: self.logger.error(f"迎新失败: {e}")
+            except Exception as e: 
+                self.logger.error(f"迎新失败: {e}")
 
         elif notice_type == "group_decrease":
             dedup_key = f"bye_{group_id}_{user_id}"
-            if self._is_duplicate_event(dedup_key, ttl=5): return
+            if self._is_duplicate_event(dedup_key, ttl=5): 
+                return
             if sub_type == "leave" and self._get_bool_cfg("security_config", "kick_black", False):
                 try:
                     if not self.is_whitelisted(str(user_id)):
@@ -348,7 +381,8 @@ class Main(Star):
                             self._set_cfg("security_config", "black_list", current_blacklist)
                             self.blacklist = current_blacklist
                             self.logger.info(f"{user_id} 主动退群自动拉黑")
-                except: pass
+                except Exception: 
+                    pass
             if sub_type == "leave" and self._get_bool_cfg("welcome_config", "enable_bye", False):
                 try:
                     nickname = str(user_id)
@@ -356,25 +390,31 @@ class Main(Star):
                         if client:
                             info = await client.call_action('get_stranger_info', user_id=user_id, no_cache=True)
                             nickname = info.get('nickname', str(user_id))
-                    except: pass
+                    except Exception: 
+                        pass
                     bye_tpl = self._get_cfg("welcome_config", "bye_msg", "群友 {username} 离开了。")
                     bye_msg = bye_tpl.format(username=nickname, userid=user_id)
                     
                     img_path = self._get_img_from_config("bye_images_list")
-                    if img_path: bye_msg += self._get_local_image_cq(img_path)
+                    if img_path: 
+                        bye_msg += self._get_local_image_cq(img_path)
                     
-                    if client: await client.call_action('send_group_msg', group_id=group_id, message=bye_msg)
-                except: pass
+                    if client: 
+                        await client.call_action('send_group_msg', group_id=group_id, message=bye_msg)
+                except Exception: 
+                    pass
     
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
         try:
-            if not self.is_alive: return
+            if not self.is_alive: 
+                return
             group_id = int(event.message_obj.group_id)
             user_id = str(event.get_sender_id())
             
             monitored = self._parse_list_config("clean_config", "monitored_groups")
-            if group_id not in monitored: return
+            if group_id not in monitored: 
+                return
             
             gid_str = str(group_id)
             if gid_str not in self.realtime_activity:
@@ -386,7 +426,8 @@ class Main(Star):
                 self.logger.info(f"监测到 群[{group_id}] [{user_id}] 冒泡了，已解除警告")
                 self.warned_users.pop(user_key, None)
                 self.save_data()
-        except: pass
+        except Exception: 
+            pass
 
     # ==================== LLM 智能惩罚 ====================
 
@@ -425,18 +466,21 @@ class Main(Star):
         min_min = self._get_cfg("mute_config", "punish_min", 1)
         max_min = self._get_cfg("mute_config", "punish_max", 10)
         
-        if min_min > max_min: min_min, max_min = max_min, min_min
+        if min_min > max_min: 
+            min_min, max_min = max_min, min_min
         min_sec = min_min * 60
         max_sec = max_min * 60
         base_duration = random.randint(min_sec, max_sec)
         
         max_mul = self._get_cfg("mute_config", "max_multiplier", 10)
-        if max_mul < 1: max_mul = 1
+        if max_mul < 1: 
+            max_mul = 1
         
         multiplier = min(violation_count, max_mul) 
         final_duration = base_duration * multiplier
         
-        if final_duration > 2592000: final_duration = 2592000
+        if final_duration > 2592000: 
+            final_duration = 2592000
         
         success = await self.api_mute_member(int(group_id), int(user_id), final_duration)
         
@@ -465,7 +509,8 @@ class Main(Star):
     async def terminate(self):
         self.is_alive = False
         self.save_data() 
-        if self._bg_task: self._bg_task.cancel()
+        if self._bg_task: 
+            self._bg_task.cancel()
         self.logger.info("QQ群小管家 已停止")
 
     async def _background_loop(self):
@@ -474,13 +519,18 @@ class Main(Star):
         while not client:
             try:
                 client = self._get_qq_client()
-                if not client: await asyncio.sleep(5)
-            except: await asyncio.sleep(5)
+                if not client: 
+                    await asyncio.sleep(5)
+            except Exception: 
+                await asyncio.sleep(5)
             
         try:
-            if hasattr(client, "on_request"): client.on_request(self.on_group_request)
-            if hasattr(client, "on_notice"): client.on_notice(self.on_group_notice)
-        except Exception as e: self.logger.warning(f"注册事件失败: {e}")
+            if hasattr(client, "on_request"): 
+                client.on_request(self.on_group_request)
+            if hasattr(client, "on_notice"): 
+                client.on_notice(self.on_group_notice)
+        except Exception as e: 
+            self.logger.warning(f"注册事件失败: {e}")
 
         if self.last_check_time == 0:
             self.last_check_time = time.time()
@@ -497,18 +547,21 @@ class Main(Star):
 
                 raw_cfg = self._get_cfg("clean_config", "check_interval", 1)
                 check_interval = raw_cfg * 3600 
-                if check_interval < 300: check_interval = 300 
+                if check_interval < 300: 
+                    check_interval = 300 
 
                 current_ts = time.time()
                 if current_ts - self.last_check_time >= check_interval:
-                    async with self.lock: await self.check_inactive_members()
+                    async with self.lock: 
+                        await self.check_inactive_members()
                     self.last_check_time = current_ts
                     self.save_data() 
                     self.logger.info(f"潜水清理检查完成，下次将在 {check_interval} 秒后")
 
                 await asyncio.sleep(60)
 
-            except asyncio.CancelledError: break 
+            except asyncio.CancelledError: 
+                break 
             except Exception as e:
                 self.logger.error(f"后台循环异常: {e}")
                 await asyncio.sleep(60)
@@ -516,22 +569,26 @@ class Main(Star):
     # ==================== 宵禁模式逻辑 ====================
 
     async def check_night_mode(self):
-        if not self._get_bool_cfg("night_mode", "enable", False): return
+        if not self._get_bool_cfg("night_mode", "enable", False): 
+            return
         
         start_h = self._get_cfg("night_mode", "start_hour", 0)
         end_h = self._get_cfg("night_mode", "end_hour", 6)
         monitored = self._parse_list_config("clean_config", "monitored_groups")
         
-        if not monitored: return
+        if not monitored: 
+            return
 
         now = datetime.now()
         current_h = now.hour
         current_m = now.minute
 
-        if current_m != 0: return 
+        if current_m != 0: 
+            return 
 
         client = self._get_qq_client()
-        if not client: return
+        if not client: 
+            return
 
         action = None
         
@@ -554,15 +611,18 @@ class Main(Star):
     # ==================== 清理逻辑 ====================
 
     async def check_inactive_members(self):
-        if not self.config.get("enabled", True) or not self.member_cache or not self.is_alive: return
+        if not self.config.get("enabled", True) or not self.member_cache or not self.is_alive: 
+            return
         
         raw_inactive = self._get_cfg("clean_config", "inactive_days", 30)
         if raw_inactive < 1: 
             raw_inactive = 1 
         
         warning_days = self._get_cfg("clean_config", "warning_days", 7)
-        if warning_days >= raw_inactive: warning_days = raw_inactive - 1
-        if warning_days < 0: warning_days = 0
+        if warning_days >= raw_inactive: 
+            warning_days = raw_inactive - 1
+        if warning_days < 0: 
+            warning_days = 0
 
         auto_kick = self._get_bool_cfg("clean_config", "auto_kick", False)
         send_warning = self._get_bool_cfg("clean_config", "send_warning", False)
@@ -578,7 +638,8 @@ class Main(Star):
             
             for m in members:
                 uid = str(m.get('user_id'))
-                if self.is_whitelisted(uid): continue
+                if self.is_whitelisted(uid): 
+                    continue
                 
                 if m.get('role') in ['owner', 'admin'] and self._get_bool_cfg("clean_config", "skip_admins", True): 
                     stats["admin"] += 1
@@ -587,7 +648,8 @@ class Main(Star):
                 last = max(m.get('last_sent_time', 0) or m.get('join_time', 0), 
                            self.realtime_activity.get(str(gid), {}).get(uid, 0))
                 
-                if last == 0: continue
+                if last == 0: 
+                    continue
                 
                 days_inactive = (current_ts - last) // 86400
                 
@@ -610,7 +672,8 @@ class Main(Star):
                             kick_list.append(info)
                         
                 elif send_warning and days_inactive >= (raw_inactive - warning_days):
-                    if user_key not in self.warned_users: warning_list.append(info)
+                    if user_key not in self.warned_users: 
+                        warning_list.append(info)
             
             stats["kick"] = len(kick_list)
             stats["warn"] = len(warning_list)
@@ -618,15 +681,19 @@ class Main(Star):
             
             self.logger.info(f"群[{gid}] 扫描 (阈值{raw_inactive}天): 待踢[{stats['kick']}] 待警[{stats['warn']}]")
 
-            if warning_list: await self.send_warnings(gid, warning_list)
-            if kick_list: await self.handle_kick(gid, kick_list, auto_kick)
-            if warning_list or kick_list: await asyncio.sleep(5)
+            if warning_list: 
+                await self.send_warnings(gid, warning_list)
+            if kick_list: 
+                await self.handle_kick(gid, kick_list, auto_kick)
+            if warning_list or kick_list: 
+                await asyncio.sleep(5)
         
         self._clean_cache_data()
         self.save_data()
 
     async def send_warnings(self, group_id: str, members: List[Dict]):
-        if not self._get_bool_cfg("clean_config", "send_warning", False): return
+        if not self._get_bool_cfg("clean_config", "send_warning", False): 
+            return
         try:
             msg = "警告：以下成员长时间未发言\n请尽快冒泡，否则将进行清理\n\n"
             count = 0
@@ -644,7 +711,8 @@ class Main(Star):
 
     async def handle_kick(self, group_id: str, members: List[Dict], auto_kick: bool):
         client = self._get_qq_client()
-        if not client: return
+        if not client: 
+            return
         
         if not auto_kick:
             msg = "建议清理名单:\n" + "\n".join(
@@ -670,7 +738,8 @@ class Main(Star):
             
             if count > 0 and self._get_bool_cfg("clean_config", "send_kick_notification", True):
                  await client.call_action('send_group_msg', group_id=int(group_id), message=f"已自动清理 {count} 名不活跃成员")
-        except Exception as e: self.logger.error(f"清理失败: {e}")
+        except Exception as e: 
+            self.logger.error(f"清理失败: {e}")
 
     def _clean_cache_data(self):
         try:
@@ -712,24 +781,28 @@ class Main(Star):
             if self.config_path.exists():
                 with open(self.config_path, 'r', encoding='utf-8-sig') as f: 
                     local_data = json.load(f)
-                    if not isinstance(local_data, dict): return
+                    if not isinstance(local_data, dict): 
+                        return
                     dynamic_keys = ['black_list', 'whitelist', 'monitored_groups', 'admin_list', 'black_groups']
                     for section, content in local_data.items():
-                        if section not in self.config: self.config[section] = {}
+                        if section not in self.config: 
+                            self.config[section] = {}
                         if isinstance(content, dict):
                             for k, v in content.items():
                                 if k in dynamic_keys and k not in self.config[section]:
                                     self.config[section][k] = v
                                 elif k not in self.config[section] and not self.config.get('enabled'):
                                     pass
-        except Exception as e: self.logger.warning(f"读取本地配置出错: {e}")
+        except Exception as e: 
+            self.logger.warning(f"读取本地配置出错: {e}")
 
     def save_config(self):
         try: 
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.config_path, 'w', encoding='utf-8') as f: 
                 json.dump(self.config, f, ensure_ascii=False, indent=2)
-        except: pass
+        except Exception: 
+            pass
 
     # ==================== 数据与工具 ====================
 
@@ -832,9 +905,12 @@ class Main(Star):
             if getattr(comp, 'type', '').lower() == 'at':
                 if hasattr(comp, 'data') and isinstance(comp.data, dict):
                     uid = comp.data.get('qq') or comp.data.get('user_id')
-                    if uid: return int(uid)
-                if hasattr(comp, 'qq'): return int(comp.qq)
-                if hasattr(comp, 'user_id'): return int(comp.user_id)
+                    if uid: 
+                        return int(uid)
+                if hasattr(comp, 'qq'): 
+                    return int(comp.qq)
+                if hasattr(comp, 'user_id'): 
+                    return int(comp.user_id)
         for part in event.message_str.split():
             if part.isdigit() and len(part) >= 5:
                 return int(part)
@@ -847,7 +923,8 @@ class Main(Star):
         for arg in args:
             if arg.isdigit():
                 val = int(arg)
-                if target_id and val == target_id: continue
+                if target_id and val == target_id: 
+                    continue
                 return val * 60
             if arg.lower().endswith('m') and arg[:-1].isdigit():
                 return int(arg[:-1]) * 60
@@ -862,7 +939,8 @@ class Main(Star):
             if isinstance(emoji_ids, int):
                 emoji_ids = [emoji_ids]
             
-            if not emoji_ids: return
+            if not emoji_ids: 
+                return
 
             msg_id = None
             if hasattr(event.message_obj, 'message_id'):
@@ -870,11 +948,14 @@ class Main(Star):
             elif hasattr(event.message_obj, 'raw_message') and isinstance(event.message_obj.raw_message, dict):
                  msg_id = int(event.message_obj.raw_message.get('message_id', 0))
             
-            if not msg_id: return
+            if not msg_id: 
+                return
 
             client = getattr(event, 'bot', None)
-            if not client: client = self._get_qq_client()
-            if not client: return
+            if not client: 
+                client = self._get_qq_client()
+            if not client: 
+                return
 
             for eid in emoji_ids:
                 if hasattr(client, 'set_msg_emoji_like'):
@@ -923,9 +1004,11 @@ class Main(Star):
 
     @filter.command("设置欢迎消息")
     async def cmd_set_welcome(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         group_id = getattr(event.message_obj, 'group_id', None)
-        if not group_id: return
+        if not group_id: 
+            return
         content = event.message_str.split(maxsplit=1)[1].strip() if len(event.message_str.split()) > 1 else ""
         if not content:
             yield event.plain_result("请输入内容")
@@ -936,14 +1019,16 @@ class Main(Star):
 
     @filter.command("查看欢迎消息")
     async def cmd_get_welcome(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         group_id = getattr(event.message_obj, 'group_id', None)
         msg = self.custom_welcome.get(str(group_id)) or self._get_cfg("welcome_config", "welcome_msg")
         yield event.plain_result(f"当前欢迎：\n{msg}")
 
     @filter.command("管家帮助")
     async def cmd_help(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         help_text = (
             "QQ群小管家 使用帮助 \n"
             "【群管禁言】\n"
@@ -967,9 +1052,11 @@ class Main(Star):
 
     @filter.command("禁言")
     async def cmd_mute(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         group_id = getattr(event.message_obj, 'group_id', None)
-        if not group_id: return
+        if not group_id: 
+            return
         
         target_id = self._extract_target_id(event)
         if not target_id:
@@ -993,9 +1080,11 @@ class Main(Star):
 
     @filter.command("解禁")
     async def cmd_unmute(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         group_id = getattr(event.message_obj, 'group_id', None)
-        if not group_id: return
+        if not group_id: 
+            return
         
         target_id = self._extract_target_id(event)
         if not target_id:
@@ -1016,9 +1105,11 @@ class Main(Star):
 
     @filter.command("赦免")
     async def cmd_pardon(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         group_id = getattr(event.message_obj, 'group_id', None)
-        if not group_id: return
+        if not group_id: 
+            return
         
         target_id = self._extract_target_id(event)
         if not target_id:
@@ -1052,9 +1143,11 @@ class Main(Star):
 
     @filter.command("全员禁言")
     async def cmd_mute_all(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         group_id = getattr(event.message_obj, 'group_id', None)
-        if not group_id: return
+        if not group_id: 
+            return
         
         msg = event.message_str
         enable = "关闭" not in msg and "解除" not in msg
@@ -1067,9 +1160,11 @@ class Main(Star):
 
     @filter.command("全员解禁")
     async def cmd_unmute_all(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         group_id = getattr(event.message_obj, 'group_id', None)
-        if not group_id: return
+        if not group_id: 
+            return
         
         if await self.api_mute_whole(int(group_id), False):
             yield event.plain_result(f"全员禁言已解除")
@@ -1078,17 +1173,20 @@ class Main(Star):
 
     @filter.command("管家监控")
     async def cmd_monitor(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         for res in self._handle_list_cmd(event, "clean_config", "monitored_groups", "管家监控群"): yield res
 
     @filter.command("白名单")
     async def cmd_whitelist(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         for res in self._handle_list_cmd(event, "security_config", "whitelist", "白名单"): yield res
 
     @filter.command("黑名单")
     async def cmd_blacklist(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         for res in self._handle_list_cmd(event, "security_config", "black_list", "黑名单"): yield res
 
     def _handle_list_cmd(self, event, section, key, name):
@@ -1103,38 +1201,49 @@ class Main(Star):
                 if target not in lst:
                     lst.append(target)
                     self._set_cfg(section, key, lst)
-                    if key == "black_list": self.blacklist = lst
+                    if key == "black_list": 
+                        self.blacklist = lst
                     yield event.plain_result(f"已添加 {target}")
-                else: yield event.plain_result("已存在")
+                else: 
+                    yield event.plain_result("已存在")
             elif msg[1] == "删除":
                 if target in lst:
                     lst.remove(target)
                     self._set_cfg(section, key, lst)
-                    if key == "black_list": self.blacklist = lst
+                    if key == "black_list": 
+                        self.blacklist = lst
                     yield event.plain_result(f"已删除 {target}")
-                else: yield event.plain_result(f"{target} 不在{name}中")
-        except: yield event.plain_result("格式错误")
+                else: 
+                    yield event.plain_result(f"{target} 不在{name}中")
+        except Exception: 
+            yield event.plain_result("格式错误")
 
     @filter.command("清理检查")
     async def cmd_check(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         yield event.plain_result("开始检查...")
-        if not self.member_cache: await self.update_member_cache()
-        async with self.lock: await self.check_inactive_members()
+        if not self.member_cache: 
+            await self.update_member_cache()
+        async with self.lock: 
+            await self.check_inactive_members()
         yield event.plain_result("完成")
 
     @filter.command("更新成员")
     async def cmd_update(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         yield event.plain_result("更新中...")
         await self.update_member_cache()
         yield event.plain_result("完成")
 
     @filter.command("清理预览")
     async def cmd_preview(self, event: AstrMessageEvent):
-        if not self.is_admin(str(event.get_sender_id())): return
+        if not self.is_admin(str(event.get_sender_id())): 
+            return
         group_id = getattr(event.message_obj, 'group_id', None)
-        if not group_id: return
+        if not group_id: 
+            return
         
         data = self.member_cache.get(str(group_id))
         if not data: 
@@ -1142,7 +1251,8 @@ class Main(Star):
             return
             
         raw_inactive = self._get_cfg("clean_config", "inactive_days", 30)
-        if raw_inactive < 1: raw_inactive = 1 
+        if raw_inactive < 1: 
+            raw_inactive = 1 
         
         current = int(time.time())
         threshold = current - (raw_inactive * 86400)
@@ -1151,9 +1261,11 @@ class Main(Star):
         msg = f"📋 预览 (阈值 {raw_inactive} 天):\n"
         
         for m in data.get('members', []):
-            if self.is_whitelisted(str(m.get('user_id'))): continue
+            if self.is_whitelisted(str(m.get('user_id'))): 
+                continue
             
-            if self._get_bool_cfg("clean_config", "skip_admins", True) and m.get('role') in ['owner', 'admin']: continue
+            if self._get_bool_cfg("clean_config", "skip_admins", True) and m.get('role') in ['owner', 'admin']: 
+                continue
             
             last = max(m.get('last_sent_time', 0) or m.get('join_time', 0), 
                       self.realtime_activity.get(str(group_id), {}).get(str(m.get('user_id')), 0))
@@ -1164,24 +1276,32 @@ class Main(Star):
                     days = (current - last) // 86400
                     msg += f"{count}. {m.get('card') or m.get('nickname')} - {days}天\n"
         
-        if count > 10: msg += f"...等 {count} 人"
-        if count == 0: msg += "无需清理"
+        if count > 10: 
+            msg += f"...等 {count} 人"
+        if count == 0: 
+            msg += "无需清理"
         yield event.plain_result(msg)
 
     def _get_qq_client(self):
         pm = self.context.platform_manager
         insts = pm.get_insts()
-        if not insts: return None
+        if not insts: 
+            return None
+            
+        valid_keywords = ["aiocqhttp"]
         for inst in insts:
             p_name = str(getattr(inst, "platform_name", "")).lower()
-            if "qq" in p_name or "onebot" in p_name: return inst.get_client()
+            if any(k in p_name for k in valid_keywords): 
+                return inst.get_client()
+                
         return insts[0].get_client()
 
     async def api_get_group_member_list(self, group_id: int) -> List[Dict]:
         try:
             client = self._get_qq_client()
             return await client.call_action('get_group_member_list', group_id=group_id) or [] if client else []
-        except: return []
+        except Exception: 
+            return []
 
     async def api_kick_member(self, group_id: int, user_id: int):
         try:
@@ -1189,24 +1309,33 @@ class Main(Star):
             if client:
                 await client.call_action('set_group_kick', group_id=group_id, user_id=user_id, reject_add_request=False)
                 return True
-        except: pass
+        except Exception: 
+            pass
         return False
 
     async def update_member_cache(self):
-        if self.lock.locked(): return
+        if self.lock.locked(): 
+            return
         async with self.lock:
             try:
-                if not self.is_alive: return
+                if not self.is_alive: 
+                    return
                 monitored = self._parse_list_config("clean_config", "monitored_groups")
-                if not monitored: return
+                if not monitored: 
+                    return
                 self.logger.debug(f"更新成员缓存 ({len(monitored)}个群)")
                 for gid in monitored:
                     mems = await self.api_get_group_member_list(int(gid))
-                    if mems: self.member_cache[str(gid)] = {'members': mems, 'update_time': int(time.time())}
+                    if mems: 
+                        self.member_cache[str(gid)] = {'members': mems, 'update_time': int(time.time())}
                     await asyncio.sleep(0.5)
                 self.save_data()
-            except Exception as e: self.logger.error(f"更新失败: {e}")
+            except Exception as e: 
+                self.logger.error(f"更新失败: {e}")
 
     def _parse_level(self, level) -> int:
-        try: return int(level)
-        except: return 0
+        try: 
+            return int(level)
+        except Exception: 
+            return 0
+            
