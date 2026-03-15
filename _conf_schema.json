@@ -280,6 +280,13 @@
                 "default": false,
                 "obvious_hint": true
             },
+            "cleaned_to_blacklist": {
+                "description": "清理自动拉黑",
+                "hint": "因长期潜水被自动清理的成员，自动将其加入黑名单，禁止再次加群。",
+                "type": "bool",
+                "default": false,
+                "obvious_hint": true
+            },
             "black_list": {
                 "description": "黑名单列表",
                 "hint": "此列表中的QQ号申请加群会被秒拒。",
@@ -293,8 +300,8 @@
                 "default": []
             },
             "admin_list": {
-                "description": "插件管理员",
-                "hint": "拥有使用本插件 /管家监控 等管理命令权限的QQ号。",
+                "description": "管理员",
+                "hint": "拥有管理命令权限的QQ号。",
                 "type": "list",
                 "default": []
             }
