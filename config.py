@@ -28,6 +28,8 @@ class ConfigManager:
         self.punish_times: Dict[str, int] = {} 
         self.enforce_mutes: Dict[str, int] = {} 
         self.custom_welcome = {}
+        self.custom_rules = {}  
+        self.custom_bye = {}    
         self.event_dedup_cache = {} 
         self.last_check_time = 0
         self.blacklist = []
@@ -103,9 +105,12 @@ class ConfigManager:
             try:
                 with open(self.data_file, 'r', encoding='utf-8') as f:
                     d = json.load(f)
-                    self.custom_welcome = d.get('custom_welcome', {})
-                    self.punish_counts = d.get('punish_counts', {}) 
                     
+                    self.custom_welcome = d.get('custom_welcome', {})
+                    self.custom_rules = d.get('custom_rules', {}) 
+                    self.custom_bye = d.get('custom_bye', {})     
+                    
+                    self.punish_counts = d.get('punish_counts', {}) 
                     self.warned_users = {k: self.str_to_ts(v) for k, v in d.get('warned_users', {}).items() if isinstance(v, str)}
                     
                     self.realtime_activity = {}
@@ -143,6 +148,8 @@ class ConfigManager:
                 'warned_users': save_warned, 
                 'realtime_activity': save_activity,
                 'custom_welcome': self.custom_welcome,
+                'custom_rules': self.custom_rules, 
+                'custom_bye': self.custom_bye,     
                 'punish_counts': self.punish_counts,
                 'punish_times': save_punish,
                 'enforce_mutes': save_enforce,  
@@ -152,4 +159,3 @@ class ConfigManager:
                 json.dump(d, f, ensure_ascii=False, indent=2)
         except Exception as e:
             self.logger.error(f"保存数据失败: {e}")
-            

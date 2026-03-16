@@ -218,9 +218,9 @@
                 "default": true
             },
             "welcome_msg": {
-                "description": "欢迎文案",
+                "description": "全局默认欢迎文案",
                 "type": "text",
-                "hint": "支持文字（可换行）。变量：{nickname} 用户名, {uid} QQ号。",
+                "hint": "在此设置全局通用的欢迎语。如需分群自定义，可在群内发送 /设置欢迎消息 [内容]。变量：{nickname} 用户名, {uid} QQ号。",
                 "default": "欢迎 {nickname} 加入本群！请查看群公告。"
             },
             "welcome_images_list": {
@@ -242,9 +242,9 @@
                 "default": true
             },
             "bye_msg": {
-                "description": "告别文案",
+                "description": "全局默认告别文案",
                 "type": "text",
-                "hint": "支持文字（可换行）。变量：{username} 用户名, {userid} QQ号。",
+                "hint": "在此设置全局通用的告别语。如需分群自定义，可在群内发送 /设置退群消息 [内容]。变量：{username} 用户名, {userid} QQ号。",
                 "default": "群友 {username}({userid}) 离开了大家庭。"
             },
             "bye_images_list": {
@@ -304,6 +304,19 @@
                 "hint": "拥有管理命令权限的QQ号。",
                 "type": "list",
                 "default": []
+            }
+        }
+    },
+    "group_config": {
+        "description": "📜 群规设置",
+        "type": "object",
+        "hint": "设置 LLM 向群友宣读群规的内容。",
+        "items": {
+            "rules": {
+                "description": "全局默认群规",
+                "type": "text",
+                "hint": "在此设置全局通用群规。如需分群自定义，可在群内发送 /设置群规 [内容]。支持占位符：{inactive_days}（潜水天数）, {kick_str}（踢人/记录文案）。",
+                "default": "1. 严禁发广告、刷屏、发布违法违规内容。\n2. 严禁对本管家(机器人)或其他群友进行人身攻击或辱骂，违者将被关小黑屋。\n3. 本群实行活跃度考核，潜水超过 {inactive_days} 天不发言，将被{kick_str}。\n4. 尊重群主和管理员，文明交流。"
             }
         }
     }

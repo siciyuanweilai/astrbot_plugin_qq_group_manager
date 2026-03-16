@@ -277,11 +277,13 @@ class CoreLogic:
                     bl.append(user_id)
                     self.cfg.set_cfg("security_config", "black_list", bl)
                     self.logger.debug(f"{user_id} 主动退群自动拉黑")
+                    
             if self.cfg.get_bool("welcome_config", "enable_bye", False):
                 try:
                     nickname = str(user_id)
                     if client: nickname = (await client.call_action('get_stranger_info', user_id=user_id)).get('nickname', nickname)
-                    msg = self.cfg.get_cfg("welcome_config", "bye_msg", "群友离开了。").format(username=nickname, userid=user_id)
+                    template = self.cfg.custom_bye.get(str(group_id)) or self.cfg.get_cfg("welcome_config", "bye_msg", "群友离开了。")
+                    msg = template.replace("{username}", nickname).replace("{userid}", str(user_id))
                     img = self.get_img_from_config("bye_images_list")
                     if img: msg += self.get_local_image_cq(img)
                     if client: await client.call_action('send_group_msg', group_id=group_id, message=msg)
